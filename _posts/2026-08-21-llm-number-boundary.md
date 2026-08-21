@@ -2,7 +2,7 @@
 title: "LLM이 숫자를 지어내지 못하게 만드는 법 — 계산을 모델 밖으로 내보냈다"
 date: 2026-08-21 09:00:00 +0900
 categories: architecture
-tags: [LLM, 아키텍처, 파이프라인, 클라우드비용, FinOps]
+tags: [LLM, 환각, 아키텍처, 클라우드 비용]
 excerpt: "프롬프트로 '지어내지 마라'고 하는 건 지켰는지 확인할 방법이 없다. 숫자가 지나가는 경로에서 LLM을 내리고, 출력을 산술 대조로 잠근 설계 기록."
 toc: true
 toc_sticky: true
