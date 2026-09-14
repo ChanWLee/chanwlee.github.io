@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>클라우드 낭비 계산기 — 비용 CSV를 브라우저 안에서만 분석</title>
+<meta name="description" content="AWS 비용 계산기가 못 잡는 낭비를 찾습니다. Cost Explorer CSV를 드롭하면 브라우저 안에서만 분석해 확정 낭비 항목과 월 절감액을 보여줍니다. 파일은 서버로 전송되지 않습니다.">
+<style>
+:root{--ink:#1a1a1a;--sub:#666;--line:#e5e5e5;--accent:#0b5fff;--ok:#0a7d33;--warn:#c0392b;--bg:#fafafa;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;color:var(--ink);background:var(--bg);line-height:1.65}
+main{max-width:720px;margin:0 auto;padding:40px 20px 80px}
+h1{font-size:1.7rem;line-height:1.3;margin:0 0 8px}
+.sub{color:var(--sub);margin:0 0 6px}
+.privacy{display:inline-block;background:#eef5ee;color:var(--ok);border:1px solid #cfe5cf;border-radius:6px;padding:6px 10px;font-size:.85rem;margin:10px 0 26px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:22px}
+h2{font-size:1.05rem;margin:0 0 4px}
+.hint{font-size:.85rem;color:var(--sub);margin:0 0 14px}
+label{display:block;font-size:.9rem;margin:12px 0 4px}
+input[type=number],select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:6px;font-size:.95rem;background:#fff}
+.row{display:flex;gap:12px}.row>div{flex:1}
+button{cursor:pointer;border:0;border-radius:8px;padding:12px 18px;font-size:.95rem;font-weight:600}
+.primary{background:var(--accent);color:#fff;width:100%;margin-top:16px}
+.drop{border:2px dashed #bcd0f7;border-radius:10px;padding:34px 16px;text-align:center;color:var(--sub);background:#f7faff;cursor:pointer;transition:background .15s}
+.drop.on{background:#e8f0ff;border-color:var(--accent)}
+.result{display:none;margin-top:18px}
+.band{font-size:1.25rem;font-weight:700;margin:6px 0}
+.card{border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:12px 14px;margin:10px 0;background:#fff}
+.card h3{margin:0 0 4px;font-size:.95rem}
+.card .ev{font-size:.85rem;color:var(--sub);margin:0 0 4px}
+.card .sv{font-weight:700;color:var(--warn)}
+.card .ac{font-size:.85rem;margin:6px 0 0}
+.total{background:#fff8f6;border:1px solid #f0d8d2;border-radius:8px;padding:14px;margin-top:14px}
+.grade{font-size:1.6rem;font-weight:800}
+.fine{font-size:.8rem;color:var(--sub);margin-top:6px}
+.cta{display:block;text-align:center;background:var(--ink);color:#fff;text-decoration:none;border-radius:8px;padding:14px;margin-top:16px;font-weight:600}
+.cta:hover{opacity:.9}
+.sig{border:1px solid var(--line);border-left:4px solid #e8a13c;border-radius:8px;padding:12px 14px;margin:10px 0;background:#fffdf7}
+.sig h3{margin:0 0 4px;font-size:.95rem}.sig .ev{font-size:.85rem;color:var(--sub)}
+.lock{border:1px dashed var(--line);border-radius:8px;padding:12px 14px;margin:10px 0;background:#fbfbfb;color:var(--sub);font-size:.85rem}
+.err{color:var(--warn);font-size:.9rem;margin-top:10px;display:none}
+footer{font-size:.8rem;color:var(--sub);margin-top:30px}
+footer a{color:var(--sub)}
+.tag{font-size:.75rem;background:#eee;border-radius:4px;padding:2px 6px;color:var(--sub);vertical-align:middle}
+</style>
+</head>
+<body>
+<main>
+<h1>클라우드 낭비 계산기</h1>
+<p class="sub">AWS 비용 계산기는 "얼마 나올지"를 말해줍니다. 이 도구는 청구서에서 <b>"어디서 새는지"</b>를 찾습니다.</p>
+<div class="privacy">🔒 파일은 브라우저 밖으로 나가지 않습니다 — 업로드·전송 코드가 없습니다 (개발자도구 Network 탭에서 확인 가능)</div>
+
+<section id="modeA">
+<h2>10초 추정 <span class="tag">통계 기반</span></h2>
+<p class="hint">파일 없이 업계 통계(Flexera 2026: 평균 낭비율 29%)로 낭비 구간을 추정합니다. 귀사 청구서 기반이 아닙니다.</p>
+<div class="row">
+  <div><label>월 클라우드 지출 (만 원)</label><input type="number" id="aSpend" placeholder="예: 500" min="0"></div>
+  <div><label>주 클라우드</label><select id="aCloud"><option>AWS</option><option>Azure</option><option>둘 다</option></select></div>
+</div>
+<div class="row">
+  <div><label>약정(RI/SP) 쓰고 있나요?</label><select id="aCommit"><option value="unknown">모름</option><option value="yes">예</option><option value="no">아니오</option></select></div>
+  <div><label>개발/스테이징을 밤·주말에 끄나요?</label><select id="aSched"><option value="unknown">모름</option><option value="yes">예</option><option value="no">아니오</option></select></div>
+</div>
+<button class="primary" id="aBtn">낭비 구간 추정하기</button>
+<div class="result" id="aOut">
+  <p class="band" id="aBand"></p>
+  <p class="fine">통계 기반 추정 밴드입니다. 정확한 값은 아래에서 청구서 파일로 확인하세요 — 30초면 됩니다.</p>
+</div>
+</section>
+
+<section id="modeB">
+<h2>청구서로 정밀 미리보기 <span class="tag">확정 항목만</span></h2>
+<p class="hint">AWS 콘솔 → Cost Explorer → 기간 3개월 · 그룹화 기준 <b>사용 유형(Usage Type)</b> → CSV 다운로드 → 아래에 드롭.</p>
+<div class="drop" id="drop">여기에 CSV를 끌어다 놓거나 클릭해서 선택<br><span style="font-size:.8rem">(.csv — 분석은 전부 이 브라우저 안에서만)</span></div>
+<input type="file" id="file" accept=".csv" style="display:none">
+<p class="err" id="bErr"></p>
+<div class="result" id="bOut">
+  <p id="bPeriod" class="hint"></p>
+  <p class="hint" style="background:#f4f7ff;border:1px solid #dbe6ff;border-radius:6px;padding:8px 10px">
+  이 도구는 31개 점검 항목 중 <b>브라우저 안에서 확정 가능한 일부만</b> 봅니다.
+  전체 성적표에서는 항목별 근거 수치·신뢰도·조치 순서까지 자세히 나옵니다.</p>
+  <div id="bCards"></div>
+  <div id="bSignals"></div>
+  <div id="bLocked"></div>
+  <div class="total">
+    <div>확정 낭비 합계 <b id="bSum"></b> / 월평균 지출 <span id="bAvg"></span></div>
+    <div>미리보기 등급 <span class="grade" id="bGrade"></span></div>
+    <p class="fine">* 청구서만으로 확정 가능한 6개 항목의 하한값입니다. 추정·정밀진단 25개 항목(유휴 컴퓨트, 전송비, 로그, DB 사양 등)은 포함되지 않았습니다 — 실제 낭비는 이보다 큽니다.</p>
+  </div>
+  <a class="cta" id="bCta" href="https://tally.so/r/A7Yyry?utm_source=calculator&ref=calc-tool">전체 31개 항목 성적표 무료로 받기 →</a>
+  <p class="fine">계정 권한 불필요 · 파일은 30일 후 자동 파기 · 판정 기준 31개는 <a href="https://chan7ee.tistory.com/426?utm_source=calculator">전부 공개</a>되어 있습니다.</p>
+</div>
+</section>
+
+<footer>
+만든 사람: 18년차 인프라 아키텍트 이찬우 · <a href="https://chan7ee.tistory.com/426?utm_source=calculator">판정 기준 전문</a> · <a href="https://chanwlee.github.io/sample/?utm_source=calculator">샘플 성적표</a><br>
+이 페이지는 정적 파일이며 서버가 없습니다. 입력값과 파일은 저장·전송되지 않습니다.
+</footer>
+</main>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+
+// ── 모드 A: 통계 기반 밴드 ──
+$("aBtn").addEventListener("click",function(){
+  var spend=parseFloat($("aSpend").value||"0");
+  if(!spend||spend<=0){ $("aBand").textContent="월 지출을 입력해 주세요."; $("aOut").style.display="block"; return; }
+  // 기준선 29% (Flexera 2026). 답변별 보수 보정 — 근거 있는 방향으로만 ±.
+  var lo=0.20, hi=0.35;
+  if($("aCommit").value==="yes"){ lo-=0.05; hi-=0.07; }
+  if($("aCommit").value==="no"){ lo+=0.02; hi+=0.03; }
+  if($("aSched").value==="yes"){ lo-=0.04; hi-=0.05; }
+  if($("aSched").value==="no"){ hi+=0.04; }
+  lo=Math.max(lo,0.05); hi=Math.max(hi,lo+0.05);
+  var f=function(x){return Math.round(spend*x).toLocaleString()};
+  $("aBand").textContent="월 "+f(lo)+"만 ~ "+f(hi)+"만 원이 낭비 구간일 가능성이 높습니다 (지출의 "+Math.round(lo*100)+"~"+Math.round(hi*100)+"%)";
+  $("aOut").style.display="block";
+});
+
+// ── 모드 B: CSV 드롭 ──
+var drop=$("drop"), file=$("file");
+drop.addEventListener("click",function(){file.click()});
+drop.addEventListener("dragover",function(e){e.preventDefault();drop.classList.add("on")});
+drop.addEventListener("dragleave",function(){drop.classList.remove("on")});
+drop.addEventListener("drop",function(e){e.preventDefault();drop.classList.remove("on");if(e.dataTransfer.files.length)handle(e.dataTransfer.files[0])});
+file.addEventListener("change",function(){if(file.files.length)handle(file.files[0])});
+
+function handle(f){
+  $("bErr").style.display="none"; $("bOut").style.display="none";
+  var reader=new FileReader();
+  reader.onload=function(){
+    try{
+      var agg=WasteEngine.aggregate(reader.result);
+      var res=WasteEngine.applyRules(agg);
+      render(res);
+    }catch(err){
+      $("bErr").textContent=err.message; $("bErr").style.display="block";
+    }
+  };
+  reader.readAsText(f);
+}
+
+var KRW_PER_USD=1425; // 표시용 근사 환율 — 성적표(2608-006) 병기 환율과 동일 기준
+var CUR="USD";
+function usd(v){
+  if(CUR==="KRW") return "₩"+Math.round(v).toLocaleString()+"/월";
+  return "$"+v.toFixed(1)+"/월 (약 ₩"+Math.round(v*KRW_PER_USD/1000).toLocaleString()+"천 원)";
+}
+
+function render(res){
+  CUR=res.currency||"USD";
+  $("bPeriod").textContent="분석 기간: "+res.period.start+" ~ "+res.period.end+" ("+res.n_months+"개월) · 확정 항목 "+res.findings.length+"건";
+  var html="";
+  if(!res.findings.length){
+    html="<div class='card' style='border-left-color:var(--ok)'><h3>확정 낭비 항목이 잡히지 않았습니다</h3><p class='ac'>이 파일 범위에선 깨끗합니다. 다만 추정·정밀진단 25개 항목은 별도입니다 — 전체 성적표로 확인해 보세요.</p></div>";
+  }
+  res.findings.forEach(function(f){
+    html+="<div class='card'><h3>룰 "+f.rule+" · "+f.title+"</h3><p class='ev'>"+f.evidence+"</p>"
+      +(f.saving!=null?"<span class='sv'>−"+usd(f.saving)+"</span>":"<span class='sv'>절감액 미산정 (패턴 확정)</span>")
+      +"<p class='ac'>"+f.action+"</p></div>";
+  });
+  $("bCards").innerHTML=html;
+  var sig="";
+  (res.signals||[]).forEach(function(s){
+    sig+="<div class='sig'><h3>🔍 룰 "+s.rule+" · "+s.title+"</h3><p class='ev'>"+s.evidence+"</p>"
+      +"<p class='ev'><b>판정·절감액은 전체 성적표에서</b> — 여기서는 금액을 단정하지 않습니다.</p></div>";
+  });
+  $("bSignals").innerHTML=sig;
+  $("bLocked").innerHTML="<div class='lock'>🔒 이 파일만으로는 판정할 수 없는 항목 — 유휴 컴퓨트(CPU 사용률), DB 과다 사양, "
+    +"비프로덕션 24×7 가동, 로그 수집·보존, 태깅 거버넌스, 크레딧 의존 등 <b>나머지 "
+    +(31-6-(res.signals||[]).length)+"개 항목</b>은 정밀 데이터가 필요합니다. 전체 성적표에서 다룹니다.</div>";
+  $("bSum").textContent=usd(res.monthly_confirmed_saving);
+  $("bAvg").textContent=(CUR==="KRW"?"₩"+Math.round(res.monthly_avg).toLocaleString():"$"+res.monthly_avg.toFixed(0));
+  $("bGrade").textContent=res.preview_grade+" ("+res.waste_pct.toFixed(1)+"%)";
+  $("bOut").style.display="block";
+}
+})();
+</script>
+</body>
+</html>
